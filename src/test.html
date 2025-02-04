@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Scène avec modèle GLB</title>
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+    }
+
+    canvas {
+      display: block;
+      position: fixed;
+      top: 0;
+      left: 0;
+    }
+
+    #fluid-canvas {
+      pointer-events: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      z-index: 1;
+      opacity: 0.8;
+      mix-blend-mode: screen;
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="fluid-canvas"></canvas>
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+    import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js';
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const loader = new GLTFLoader();
+    loader.load('./model/model.gltf', function (gltf) {
+      scene.add(gltf.scene);
+    }, undefined, function (error) {
+      console.error(error);
+    });
+
+    const light = new THREE.DirectionalLight(0xffffff, 1.5);
+    light.position.set(1, 1, 1);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
+
+    camera.position.z = 5;
+
+    const canvas = document.getElementById('fluid-canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let points = [];
+    let mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+
+    class Point {
+      constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.originX = x;
+        this.originY = y;
+        this.vx = 0;
+        this.vy = 0;
+      }
+
+      update() {
+        let dx = mouse.x - this.x;
+        let dy = mouse.y - this.y;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+
+        if (distance < 120) {
+          let force = (120 - distance) / 120;
+          this.vx -= (dx / distance) * force * 2;
+          this.vy -= (dy / distance) * force * 2;
+        }
+
+        this.vx += (this.originX - this.x) * 0.1;
+        this.vy += (this.originY - this.y) * 0.1;
+        this.vx *= 0.9;
+        this.vy *= 0.9;
+        this.x += this.vx;
+        this.y += this.vy;
+      }
+    }
+
+    function initGrid() {
+      points = [];
+      const spacing = 30;
+      for (let x = 0; x <= window.innerWidth; x += spacing) {
+        for (let y = 0; y <= window.innerHeight; y += spacing) {
+          points.push(new Point(x, y));
+        }
+      }
+    }
+
+    function drawGrid() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < points.length - 1; i++) {
+        const point = points[i];
+        const nextPoint = points[i + 1];
+        if (Math.abs(point.originX - nextPoint.originX) < 1) {
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.moveTo(point.x, point.y);
+          ctx.lineTo(nextPoint.x, nextPoint.y);
+          ctx.stroke();
+        }
+      }
+      for (let i = 0; i < points.length; i++) {
+        const point = points[i];
+        const nextRowPoint = points[i + Math.floor(window.innerWidth / 30) + 1];
+        if (nextRowPoint && Math.abs(point.originY - nextRowPoint.originY) < 1) {
+          ctx.beginPath();
+          ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.moveTo(point.x, point.y);
+          ctx.lineTo(nextRowPoint.x, nextRowPoint.y);
+          ctx.stroke();
+        }
+      }
+      for (const point of points) {
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(0, 255, 255, 0.8)';
+        ctx.arc(point.x, point.y, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      initGrid();
+    });
+
+    initGrid();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      renderer.render(scene, camera);
+      points.forEach(point => point.update());
+      drawGrid();
+    }
+
+    animate();
+  </script>
+</body>
+
+</html>
