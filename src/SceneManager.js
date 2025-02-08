@@ -1,21 +1,4 @@
 /**
- * 
- * 
- ▒█████    █████▒██▓   ▓██   ██▓ ███▄    █ 
-▒██▒  ██▒▓██   ▒▓██▒    ▒██  ██▒ ██ ▀█   █ 
-▒██░  ██▒▒████ ░▒██░     ▒██ ██░▓██  ▀█ ██▒
-▒██   ██░░▓█▒  ░▒██░     ░ ▐██▓░▓██▒  ▐▌██▒
-░ ████▓▒░░▒█░   ░██████▒ ░ ██▒▓░▒██░   ▓██░
-░ ▒░▒░▒░  ▒ ░   ░ ▒░▓  ░  ██▒▒▒ ░ ▒░   ▒ ▒ 
-  ░ ▒ ▒░  ░     ░ ░ ▒  ░▓██ ░▒░ ░ ░░   ░ ▒░
-░ ░ ░ ▒   ░ ░     ░ ░   ▒ ▒ ░░     ░   ░ ░ 
-    ░ ░             ░  ░░ ░              ░ 
-                        ░ ░                
- * 
- * 
- */
-
-/**
  * =========================================
  * THREE.JS CORE DEPENDENCIES
  * =========================================
@@ -26,25 +9,13 @@ import Stats from "three/examples/jsm/libs/stats.module.js";
 
 /**
  * =========================================
- * SCENE OPTIMIZATIONS & LOADERS
+ * SCENE COMPONENTS & UTILS
  * =========================================
  */
 import OptimizedModelLoader from "./utils/OptimizedModelLoader";
-
-/**
- * =========================================
- * SCENE SETUP & ENVIRONMENT
- * =========================================
- */
 import { SceneLights } from "./components/scene/Lights";
 import { setupCamera } from "./components/scene/Camera";
 import { setupPostProcessing } from "./components/scene/PostProcessing";
-
-/**
- * =========================================
- * SCENE OBJECTS & EFFECTS
- * =========================================
- */
 import { createBanc } from "./components/objects/Banc";
 import { createMirror } from "./components/objects/Mirror";
 import { createGround } from "./components/objects/Ground";
@@ -52,28 +23,42 @@ import { createVideoPlane } from "./components/objects/VideoPlane";
 import { createWall } from "./components/objects/Wall";
 import { createCables } from "./components/objects/Cables";
 import { createCableEffect } from "./components/effects/CableEffect";
-
-/**
- * =========================================
- * OPTINAL COMPONENTS
- * =========================================
- */
-
 import Konami from "./components/konami/Konami";
 
 /**
- * =========================================
- * SCENE MANAGER
- * =========================================
- * Main class to handle 3D scene management
+ * Performance configuration based on device capability
  */
+const PERFORMANCE_CONFIG = {
+  mobile: {
+    targetFPS: 30,
+    shadowMapType: THREE.BasicShadowMap,
+    pixelRatio: 1,
+    materialPrecision: "lowp",
+    anisotropy: 1,
+    pulseCount: 3,
+    glowStrength: 2.5,
+    glowSpread: 2.0,
+  },
+  desktop: {
+    targetFPS: 60,
+    shadowMapType: THREE.PCFSoftShadowMap,
+    pixelRatio: window.devicePixelRatio,
+    materialPrecision: "mediump",
+    anisotropy: 4,
+    pulseCount: 5,
+    glowStrength: 3.5,
+    glowSpread: 3.0,
+  },
+};
+
 export class SceneManager {
+  #resourceCache = new Map();
+  #disposables = new Set();
+  #frameTime;
+  #lastFrameTime = 0;
+  #perfConfig;
+
   constructor() {
-    // Ajouter un cache pour les ressources
-    this.resourceCache = new Map();
-    // Ajouter un système de gestion des ressources
-    this.disposables = new Set();
-    // État de base
     this.state = {
       isLoading: false,
       loadingProgress: 0,
@@ -81,123 +66,119 @@ export class SceneManager {
       error: null,
     };
 
-    // Initialisation
-    this.init();
-    this.initStats();
-    this.setupEventListeners();
-
-    // Composants spéciaux
-    this.cableEffect = null;
+    this.#perfConfig = this.#detectDeviceCapabilities();
     this.konami = new Konami();
-
-    console.log("SceneManager: Construction complete");
-  }
-  // Ajouter une méthode de gestion des ressources
-  trackDisposable(resource) {
-    if (resource && typeof resource.dispose === "function") {
-      this.disposables.add(resource);
-    }
-    return resource;
+    this.#init();
   }
 
-  async init() {
+  async #init() {
     try {
-      // Scene setup
-      this.scene = new THREE.Scene();
-      this.scene.background = new THREE.Color(0x000000);
+      this.#setupScene();
+      this.#setupRenderer();
+      this.#setupCamera();
+      this.#setupPostProcessing();
+      this.#setupControls();
+      this.#setupLights();
+      this.#setupEventListeners();
+      this.#setupStats();
 
-      // Camera setup
-      this.camera = new THREE.PerspectiveCamera(
-        15,
-        window.innerWidth / window.innerHeight,
-        0.01,
-        1000
-      );
-      setupCamera(this.camera);
-
-      // Renderer setup
-      this.setupRenderer();
-
-      // Post-processing
-      const postProcess = setupPostProcessing(
-        this.renderer,
-        this.scene,
-        this.camera
-      );
-      this.composer = postProcess.composer;
-      this.postProcessUpdate = postProcess.update;
-
-      // Controls
-      this.setupControls();
-
-      // Lights
-      this.lights = new SceneLights(this.scene);
-
-      // Load model
-      await this.loadModel();
-
-      // Start animation loop
-      this.animate();
+      await this.#loadModel();
+      this.#startAnimationLoop();
     } catch (error) {
       console.error("Initialization error:", error);
       this.state.error = error;
+      this.showErrorUI(error);
     }
   }
 
-  setupRenderer() {
+  #detectDeviceCapabilities() {
+    const isMobile =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      );
+    return isMobile ? PERFORMANCE_CONFIG.mobile : PERFORMANCE_CONFIG.desktop;
+  }
+
+  #setupScene() {
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x000000);
+  }
+
+  #setupRenderer() {
     this.renderer = new THREE.WebGLRenderer({
-      antialias: this.isMobile() ? false : true,
+      antialias: !this.#isMobile(),
       powerPreference: "high-performance",
-      alpha: false, // Désactiver si non nécessaire
-      stencil: false, // Désactiver si non nécessaire
+      alpha: false,
+      stencil: false,
       depth: true,
     });
 
-    // Ajouter la gestion des FPS
-    this.targetFPS = this.isMobile() ? 30 : 60;
-    this.frameTime = 1000 / this.targetFPS;
-    this.lastFrameTime = 0;
-
-    this.updateRendererSettings();
+    this.#frameTime = 1000 / this.#perfConfig.targetFPS;
+    this.#updateRendererSettings();
     document.body.appendChild(this.renderer.domElement);
   }
 
-  updateRendererSettings() {
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(window.devicePixelRatio);
+  #updateRendererSettings() {
+    const { width, height } = this.#getViewportSize();
+
+    this.renderer.setSize(width, height);
+    this.renderer.setPixelRatio(this.#perfConfig.pixelRatio);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = this.#perfConfig.shadowMapType;
     this.renderer.outputEncoding = THREE.sRGBEncoding;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
-
-    if (this.isMobile()) {
-      this.renderer.setPixelRatio(1);
-      this.renderer.shadowMap.type = THREE.BasicShadowMap;
-    }
   }
 
-  setupControls() {
+  #setupCamera() {
+    this.camera = new THREE.PerspectiveCamera(
+      15,
+      window.innerWidth / window.innerHeight,
+      0.01,
+      1000
+    );
+    setupCamera(this.camera);
+  }
+
+  #setupPostProcessing() {
+    const { composer, update } = setupPostProcessing(
+      this.renderer,
+      this.scene,
+      this.camera
+    );
+    this.composer = composer;
+    this.postProcessUpdate = update;
+  }
+
+  #setupControls() {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.05;
-    this.controls.screenSpacePanning = false;
-    this.controls.minDistance = 5;
-    this.controls.maxDistance = 100;
-    this.controls.maxPolarAngle = Math.PI / 2;
+    Object.assign(this.controls, {
+      enableDamping: true,
+      dampingFactor: 0.05,
+      screenSpacePanning: false,
+      minDistance: 5,
+      maxDistance: 100,
+      maxPolarAngle: Math.PI / 2,
+    });
     this.controls.target.set(0, 0, 0);
   }
 
-  initStats() {
+  #setupLights() {
+    this.lights = new SceneLights(this.scene);
+  }
+
+  #setupStats() {
     this.stats = new Stats();
     this.stats.showPanel(0);
     document.body.appendChild(this.stats.dom);
-    this.stats.dom.style.position = "absolute";
-    this.stats.dom.style.top = "0px";
-    this.stats.dom.style.left = "0px";
+    Object.assign(this.stats.dom.style, {
+      position: "absolute",
+      top: "32px",
+      left: "32px",
+    });
   }
 
-  async loadModel() {
+  async #loadModel() {
     this.state.isLoading = true;
     const loader = OptimizedModelLoader.getInstance();
 
@@ -207,50 +188,45 @@ export class SceneManager {
           this.state.loadingProgress = progress;
           this.updateLoadingUI(progress);
         },
-        optimizationLevel: this.isMobile() ? "low" : "medium",
+        optimizationLevel: this.#isMobile() ? "low" : "medium",
         useCache: true,
         maxRetries: 3,
       });
 
-      const model = gltf.scene;
-      await this.setupModelComponents(model);
+      await this.#setupModelComponents(gltf.scene);
 
       this.state.isLoading = false;
       this.hideLoadingUI();
     } catch (error) {
-      console.error("Error loading model:", error);
       this.state.error = error;
       this.state.isLoading = false;
       this.showErrorUI(error);
+      throw error;
     }
   }
 
-  async setupModelComponents(model) {
+  async #setupModelComponents(model) {
     try {
-      const [banc, mirror, ground, wall, cables] = await Promise.all([
+      const components = await Promise.all([
         createBanc(model),
         createMirror(model),
         createGround(model),
         createWall(model),
         createCables(model),
+        createVideoPlane(model, this.camera, this.controls),
       ]);
 
-      // Create video plane with camera and controls access
-      const videoPlane = createVideoPlane(model, this.camera, this.controls);
-
-      // Add components to scene
-      [banc, mirror, ground, videoPlane, wall].forEach((component) => {
+      components.forEach((component) => {
         if (component) {
           this.scene.add(component);
-          this.optimizeComponent(component);
+          this.#optimizeComponent(component);
         }
       });
 
-      // Special setup for cables
+      const cables = components[4];
       if (cables) {
         cables.renderOrder = 1;
-        this.scene.add(cables);
-        this.setupCableEffect(cables);
+        this.#setupCableEffect(cables);
       }
     } catch (error) {
       console.error("Error setting up model components:", error);
@@ -258,215 +234,118 @@ export class SceneManager {
     }
   }
 
-  optimizeComponent(component) {
+  #optimizeComponent(component) {
     if (!component) return;
 
     component.traverse((node) => {
-      if (node.isMesh) {
-        // Optimisation des géométries
-        const geometry = node.geometry;
-        if (geometry) {
-          geometry.attributes.position.usage = THREE.StaticDrawUsage;
-          if (geometry.index) geometry.index.usage = THREE.StaticDrawUsage;
-        }
+      if (!node.isMesh) return;
 
-        // Optimisation des matériaux
-        if (node.material) {
-          const materials = Array.isArray(node.material)
-            ? node.material
-            : [node.material];
-          materials.forEach((material) => {
-            material.precision = this.isMobile() ? "lowp" : "mediump";
-            if (material.map) {
-              material.map.anisotropy = 1;
-              material.map.minFilter = THREE.LinearFilter;
-            }
-          });
-        }
-
-        // Optimisations générales
-        node.frustumCulled = true;
-        node.matrixAutoUpdate = false;
-        node.updateMatrix();
+      if (node.geometry) {
+        const { position, index } = node.geometry.attributes;
+        position.usage = THREE.StaticDrawUsage;
+        if (index) index.usage = THREE.StaticDrawUsage;
       }
+
+      if (node.material) {
+        const materials = Array.isArray(node.material)
+          ? node.material
+          : [node.material];
+
+        materials.forEach((material) => {
+          material.precision = this.#perfConfig.materialPrecision;
+          if (material.map) {
+            material.map.anisotropy = this.#perfConfig.anisotropy;
+            material.map.minFilter = THREE.LinearFilter;
+          }
+        });
+      }
+
+      // Performance optimizations
+      node.frustumCulled = true;
+      node.matrixAutoUpdate = false;
+      node.updateMatrix();
     });
   }
 
-  setupCableEffect(cables) {
+  #setupCableEffect(cables) {
     this.cableEffect = createCableEffect(cables, {
       color: new THREE.Color(0.0, 0.5, 1.0),
       pulseSpeed: 0.5,
-      numberOfPulses: this.isMobile() ? 3 : 5,
+      numberOfPulses: this.#perfConfig.pulseCount,
       pulseWidth: 0.1,
-      glowStrength: this.isMobile() ? 2.5 : 3.5,
-      glowSpread: this.isMobile() ? 2.0 : 3.0,
+      glowStrength: this.#perfConfig.glowStrength,
+      glowSpread: this.#perfConfig.glowSpread,
     });
   }
 
-  animate() {
-    requestAnimationFrame(this.animate.bind(this));
+  #startAnimationLoop() {
+    const animate = () => {
+      requestAnimationFrame(animate);
+      const currentTime = performance.now();
 
-    this.stats.begin();
-
-    // Update post-processing si disponible
-    if (this.postProcessUpdate) {
-      this.postProcessUpdate();
-    }
-
-    // Update controls si activés
-    if (this.state.isOrbitControlEnabled) {
-      this.controls.update();
-    }
-
-    // Render
-    this.composer.render();
-
-    this.stats.end();
-  }
-
-  toggleOrbitControls() {
-    this.state.isOrbitControlEnabled = !this.state.isOrbitControlEnabled;
-    this.controls.enabled = this.state.isOrbitControlEnabled;
-    console.log(
-      `OrbitControls ${
-        this.state.isOrbitControlEnabled ? "enabled" : "disabled"
-      }`
-    );
-  }
-
-  setupEventListeners() {
-    // Gestion du resize
-    window.addEventListener("resize", this.handleResize.bind(this));
-
-    // Gestion du nettoyage
-    window.addEventListener("beforeunload", this.cleanup.bind(this));
-
-    // Controls toggle
-    window.addEventListener("keydown", (event) => {
-      if (event.key.toLowerCase() === "m") {
-        this.toggleOrbitControls();
+      if (currentTime - this.#lastFrameTime < this.#frameTime) {
+        return;
       }
-    });
 
-    // Touch events pour mobile
-    if (this.isMobile()) {
-      this.setupTouchEvents();
+      this.stats.begin();
+
+      if (this.postProcessUpdate) {
+        this.postProcessUpdate();
+      }
+
+      if (this.state.isOrbitControlEnabled) {
+        this.controls.update();
+      }
+
+      this.composer.render();
+      this.stats.end();
+
+      this.#lastFrameTime = currentTime;
+    };
+
+    animate();
+  }
+
+  #setupEventListeners() {
+    window.addEventListener("resize", this.#handleResize.bind(this));
+    window.addEventListener("beforeunload", this.cleanup.bind(this));
+    window.addEventListener("keydown", this.#handleKeyPress.bind(this));
+
+    if (this.#isMobile()) {
+      this.#setupTouchEvents();
     }
   }
 
-  handleResize() {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
+  #handleResize = () => {
+    const { width, height } = this.#getViewportSize();
 
-    // Update camera
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
 
-    // Update renderer
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-    // Update composer
     this.composer.setSize(width, height);
-  }
+  };
 
-  cleanup() {
-    // Remove event listeners
-    window.removeEventListener("resize", this.handleResize);
-    window.removeEventListener("beforeunload", this.cleanup);
-    window.removeEventListener("keydown", this.toggleOrbitControls);
-
-    // Cleanup Konami
-    if (this.konami) {
-      this.konami.destroy();
+  #handleKeyPress = (event) => {
+    if (event.key.toLowerCase() === "m") {
+      this.toggleOrbitControls();
     }
+  };
 
-    // Cleanup effects
-    if (this.cableEffect) {
-      this.cableEffect.dispose();
-    }
-
-    // Dispose of scene objects
-    this.scene.traverse((object) => {
-      if (object.geometry) {
-        object.geometry.dispose();
-      }
-      if (object.material) {
-        if (Array.isArray(object.material)) {
-          object.material.forEach((material) => this.disposeMaterial(material));
-        } else {
-          this.disposeMaterial(object.material);
-        }
-      }
-    });
-
-    // Cleanup core components
-    this.lights.dispose();
-    this.controls.dispose();
-    this.renderer.dispose();
-    if (this.composer) {
-      this.composer.dispose();
-    }
-
-    // Remove stats
-    if (this.stats && this.stats.dom && this.stats.dom.parentElement) {
-      this.stats.dom.parentElement.removeChild(this.stats.dom);
-    }
-
-    // Cleanup model loader
-    OptimizedModelLoader.getInstance().cleanup();
-  }
-
-  disposeMaterial(material) {
-    material.dispose();
-    Object.values(material).forEach((value) => {
-      if (value && typeof value.dispose === "function") {
-        value.dispose();
-      }
-    });
-  }
-
-  // UI Methods
-  updateLoadingUI(progress) {
-    console.log(`Loading: ${progress.toFixed(1)}%`);
-  }
-
-  hideLoadingUI() {
-    // Implementation de la suppression de l'UI de chargement
-  }
-
-  showErrorUI(error) {
-    console.error("Scene loading error:", error);
-  }
-
-  // Utility Methods
-  isMobile() {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
-      navigator.userAgent
-    );
-  }
-
-  setupTouchEvents() {
+  #setupTouchEvents() {
     let touchStartX = 0;
     let touchStartY = 0;
 
-    this.renderer.domElement.addEventListener(
-      "touchstart",
-      (e) => {
+    const touchHandlers = {
+      start: (e) => {
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
       },
-      { passive: true }
-    );
-
-    this.renderer.domElement.addEventListener(
-      "touchmove",
-      (e) => {
+      move: (e) => {
         if (!this.state.isOrbitControlEnabled) return;
 
         const touchEndX = e.touches[0].clientX;
         const touchEndY = e.touches[0].clientY;
-
         const deltaX = touchEndX - touchStartX;
         const deltaY = touchEndY - touchStartY;
 
@@ -476,8 +355,91 @@ export class SceneManager {
         touchStartX = touchEndX;
         touchStartY = touchEndY;
       },
+    };
+
+    this.renderer.domElement.addEventListener(
+      "touchstart",
+      touchHandlers.start,
       { passive: true }
     );
+    this.renderer.domElement.addEventListener("touchmove", touchHandlers.move, {
+      passive: true,
+    });
+  }
+
+  #getViewportSize() {
+    return {
+      width: window.innerWidth,
+      height: window.innerHeight,
+    };
+  }
+
+  #isMobile() {
+    return this.#perfConfig === PERFORMANCE_CONFIG.mobile;
+  }
+
+  // Public methods
+  toggleOrbitControls() {
+    this.state.isOrbitControlEnabled = !this.state.isOrbitControlEnabled;
+    this.controls.enabled = this.state.isOrbitControlEnabled;
+  }
+
+  updateLoadingUI(progress) {
+    console.log(`Loading: ${progress.toFixed(1)}%`);
+  }
+
+  hideLoadingUI() {
+    // Implementation for hiding loading UI
+  }
+
+  showErrorUI(error) {
+    console.error("Scene loading error:", error);
+  }
+
+  cleanup() {
+    // Remove event listeners
+    window.removeEventListener("resize", this.#handleResize);
+    window.removeEventListener("beforeunload", this.cleanup);
+    window.removeEventListener("keydown", this.#handleKeyPress);
+
+    // Cleanup Konami
+    if (this.konami) {
+      this.konami.destroy();
+    }
+
+    // Cleanup resources
+    [this.lights, this.controls, this.renderer, this.composer, this.cableEffect]
+      .filter(Boolean)
+      .forEach((resource) => resource.dispose?.());
+
+    // Cleanup scene
+    this.scene.traverse((object) => {
+      if (object.geometry) {
+        object.geometry.dispose();
+      }
+      if (object.material) {
+        const materials = Array.isArray(object.material)
+          ? object.material
+          : [object.material];
+
+        materials.forEach((material) => {
+          Object.values(material)
+            .filter((value) => value?.dispose instanceof Function)
+            .forEach((value) => value.dispose());
+          material.dispose();
+        });
+      }
+    });
+
+    // Remove stats
+    this.stats?.dom?.parentElement?.removeChild(this.stats.dom);
+
+    // Cleanup model loader
+    OptimizedModelLoader.getInstance().cleanup();
+
+    // Clear caches
+    this.#resourceCache.clear();
+    this.#disposables.clear();
   }
 }
 
