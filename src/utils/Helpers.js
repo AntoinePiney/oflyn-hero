@@ -12,6 +12,7 @@ cam(0,10,0)            cam(0,0,10)            cam(10,0,0)
 
 
 ROTATIONS (en radians):
+
          π/2
           ↑ 
           |

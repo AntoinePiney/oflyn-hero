@@ -31,31 +31,40 @@ Donc :
 import * as THREE from "three";
 
 export function setupCamera(camera) {
-  // Set initial camera position slightly back
-  camera.position.set(5, 10, 0); // Position de départ plus en arrière
+  // État pour le suivi de la souris
+  const mouse = {
+    x: 0,
+    y: 0,
+    targetX: 0,
+    targetY: 0,
+  };
 
-  // Set initial camera rotation (converting degrees to radians)
+  // Position initiale de la caméra
+  camera.position.set(5, 10, 0);
   camera.rotation.set(
     THREE.MathUtils.degToRad(-90),
     THREE.MathUtils.degToRad(90),
     THREE.MathUtils.degToRad(90)
   );
-
-  // Set camera to look at the center of the scene
   camera.lookAt(0, 0, 0);
 
-  // Optional: Set custom camera parameters
+  // Paramètres de la caméra
   camera.fov = 17;
   camera.near = 0.01;
   camera.far = 1000;
-
-  // Make sure to update the projection matrix after changing parameters
   camera.updateProjectionMatrix();
 
-  // Animation function
+  // Gestionnaire de mouvement de souris
+  function handleMouseMove(event) {
+    // Normaliser les coordonnées de la souris entre -1 et 1
+    mouse.targetX = (event.clientX / window.innerWidth) * 2 - 1;
+    mouse.targetY = (event.clientY / window.innerHeight) * 2 - 1;
+  }
+
+  // Animation initiale de la caméra
   const animateCamera = () => {
-    const targetPosition = new THREE.Vector3(27, 0.5, 0); // Position finale souhaitée
-    const duration = 2000; // Durée en millisecondes
+    const targetPosition = new THREE.Vector3(27, 0.5, 0);
+    const duration = 2000;
     const startPosition = camera.position.clone();
     const startTime = Date.now();
 
@@ -63,11 +72,8 @@ export function setupCamera(camera) {
       const currentTime = Date.now();
       const elapsed = currentTime - startTime;
       const progress = Math.min(elapsed / duration, 1.5);
-
-      // Fonction d'easing pour une animation plus fluide
       const easeProgress = easeInOutQuad(progress);
 
-      // Interpolation de la position
       camera.position.lerpVectors(startPosition, targetPosition, easeProgress);
       camera.updateProjectionMatrix();
 
@@ -75,17 +81,42 @@ export function setupCamera(camera) {
         requestAnimationFrame(update);
       }
     }
-
     update();
   };
 
-  // Démarrer l'animation après un court délai
-  setTimeout(animateCamera, 900);
+  // Animation continue pour le suivi de souris
+  function updateMouseMovement() {
+    // Interpolation fluide des valeurs de la souris
+    mouse.x = THREE.MathUtils.lerp(mouse.x, mouse.targetX, 0.05);
+    mouse.y = THREE.MathUtils.lerp(mouse.y, mouse.targetY, 0.05);
 
-  return camera;
+    // Calculer les rotations basées sur la position de la souris
+    const rotationOffsetX = mouse.y * 0.3; // Réduit l'amplitude du mouvement
+    const rotationOffsetY = mouse.x * 0.3;
+
+    // Appliquer les rotations à la position de base
+    camera.position.x = 27 + rotationOffsetY * 2;
+    camera.position.y = 0.5 + rotationOffsetX * 2;
+
+    // Garder la caméra orientée vers le centre
+    camera.lookAt(0, 0, 0);
+
+    requestAnimationFrame(updateMouseMovement);
+  }
+
+  // Démarrer les animations
+  setTimeout(animateCamera, 900);
+  setTimeout(updateMouseMovement, 2900); // Commence après l'animation initiale
+
+  // Ajouter l'écouteur d'événements
+  window.addEventListener("mousemove", handleMouseMove);
+
+  // Nettoyer les événements lors du démontage
+  return () => {
+    window.removeEventListener("mousemove", handleMouseMove);
+  };
 }
 
-// Fonction d'easing pour une animation plus fluide
 function easeInOutQuad(t) {
   return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 }

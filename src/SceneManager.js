@@ -1,19 +1,84 @@
+/**
+ * 
+ * 
+ ▒█████    █████▒██▓   ▓██   ██▓ ███▄    █ 
+▒██▒  ██▒▓██   ▒▓██▒    ▒██  ██▒ ██ ▀█   █ 
+▒██░  ██▒▒████ ░▒██░     ▒██ ██░▓██  ▀█ ██▒
+▒██   ██░░▓█▒  ░▒██░     ░ ▐██▓░▓██▒  ▐▌██▒
+░ ████▓▒░░▒█░   ░██████▒ ░ ██▒▓░▒██░   ▓██░
+░ ▒░▒░▒░  ▒ ░   ░ ▒░▓  ░  ██▒▒▒ ░ ▒░   ▒ ▒ 
+  ░ ▒ ▒░  ░     ░ ░ ▒  ░▓██ ░▒░ ░ ░░   ░ ▒░
+░ ░ ░ ▒   ░ ░     ░ ░   ▒ ▒ ░░     ░   ░ ░ 
+    ░ ░             ░  ░░ ░              ░ 
+                        ░ ░                
+ * 
+ * 
+ */
+
+/**
+ * =========================================
+ * THREE.JS CORE DEPENDENCIES
+ * =========================================
+ */
 import * as THREE from "three";
+
+/**
+ * =========================================
+ * THREE.JS ADDONS & UTILITIES
+ * =========================================
+ */
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Stats from "three/examples/jsm/libs/stats.module.js";
 
-// Import components
+/**
+ * =========================================
+ * SCENE SETUP & ENVIRONMENT
+ * =========================================
+ * Core components for scene initialization
+ * and environmental setup
+ */
 import { SceneLights } from "./components/scene/Lights";
-import { createBanc } from "./components/objects/Banc";
-import { createMirror } from "./components/objects/Mirror";
-import { createGround } from "./components/objects/Ground";
-import { createVideoPlane } from "./components/objects/VideoPlane";
-import { createWall } from "./components/objects/Wall";
-import { createCables } from "./components/objects/Cables";
-import { createCableEffect } from "./components/effects/CableEffect";
 import { setupCamera } from "./components/scene/Camera";
 import { setupPostProcessing } from "./components/scene/PostProcessing";
+
+/**
+ * =========================================
+ * STATIC SCENE OBJECTS
+ * =========================================
+ * Basic structural elements and environment
+ */
+import { createGround } from "./components/objects/Ground";
+import { createWall } from "./components/objects/Wall";
+
+/**
+ * =========================================
+ * INTERACTIVE ELEMENTS
+ * =========================================
+ * Objects that may have user interaction
+ * or dynamic behavior
+ */
+import { createBanc } from "./components/objects/Banc";
+import { createMirror } from "./components/objects/Mirror";
+import { createVideoPlane } from "./components/objects/VideoPlane";
+
+/**
+ *
+ * =========================================
+ * SPECIAL EFFECTS & ANIMATIONS
+ * =========================================
+ *
+ */
+import { createCables } from "./components/objects/Cables";
+import { createCableEffect } from "./components/effects/CableEffect";
+
+/**
+ *
+ * =========================================
+ * SCENE MANAGER
+ * =========================================
+ *
+ */
 
 export class SceneManager {
   constructor() {
@@ -22,6 +87,7 @@ export class SceneManager {
     this.init();
     this.setupEventListeners();
     this.cableEffect = null;
+    this.isOrbitControlEnabled = true; // Nouvel état pour suivre l'état des contrôles
     console.log("SceneManager: Construction complete");
   }
 
@@ -46,14 +112,15 @@ export class SceneManager {
       this.postProcessUpdate();
     }
 
-    this.controls.update();
+    if (this.isOrbitControlEnabled) {
+      this.controls.update();
+    }
     this.composer.render();
 
     // End stats measurement
     this.stats.end();
   }
 
-  // Rest of the code remains unchanged
   init() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x000000);
@@ -99,6 +166,70 @@ export class SceneManager {
     this.loadModel();
   }
 
+  // Nouvelle méthode pour gérer l'activation/désactivation des contrôles
+  toggleOrbitControls() {
+    this.isOrbitControlEnabled = !this.isOrbitControlEnabled;
+    this.controls.enabled = this.isOrbitControlEnabled;
+    console.log(
+      `OrbitControls ${this.isOrbitControlEnabled ? "enabled" : "disabled"}`
+    );
+  }
+
+  setupEventListeners() {
+    window.addEventListener("resize", this.handleResize.bind(this));
+    window.addEventListener("beforeunload", this.cleanup.bind(this));
+    // Ajout du gestionnaire d'événements pour la touche 'O'
+    window.addEventListener("keydown", (event) => {
+      if (event.key.toLowerCase() === "o") {
+        this.toggleOrbitControls();
+      }
+    });
+  }
+
+  handleResize() {
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.composer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  cleanup() {
+    window.removeEventListener("resize", this.handleResize);
+    window.removeEventListener("beforeunload", this.cleanup);
+    // Suppression du gestionnaire d'événements de la touche 'O'
+    window.removeEventListener("keydown", this.toggleOrbitControls);
+
+    this.scene.traverse((object) => {
+      if (object.geometry) {
+        object.geometry.dispose();
+      }
+      if (object.material) {
+        if (Array.isArray(object.material)) {
+          object.material.forEach((material) => material.dispose());
+        } else {
+          object.material.dispose();
+        }
+      }
+    });
+
+    if (this.cableEffect) {
+      this.cableEffect.dispose();
+    }
+
+    this.lights.dispose();
+    this.controls.dispose();
+    this.renderer.dispose();
+    if (this.composer) {
+      this.composer.dispose();
+    }
+
+    // Remove stats panel
+    if (this.stats) {
+      document.body.removeChild(this.stats.dom);
+    }
+  }
+
   async loadModel() {
     const loader = new GLTFLoader();
     try {
@@ -137,53 +268,6 @@ export class SceneManager {
       this.animate();
     } catch (error) {
       console.error("Error loading model:", error);
-    }
-  }
-
-  setupEventListeners() {
-    window.addEventListener("resize", this.handleResize.bind(this));
-    window.addEventListener("beforeunload", this.cleanup.bind(this));
-  }
-
-  handleResize() {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.composer.setSize(window.innerWidth, window.innerHeight);
-  }
-
-  cleanup() {
-    window.removeEventListener("resize", this.handleResize);
-    window.removeEventListener("beforeunload", this.cleanup);
-
-    this.scene.traverse((object) => {
-      if (object.geometry) {
-        object.geometry.dispose();
-      }
-      if (object.material) {
-        if (Array.isArray(object.material)) {
-          object.material.forEach((material) => material.dispose());
-        } else {
-          object.material.dispose();
-        }
-      }
-    });
-
-    if (this.cableEffect) {
-      this.cableEffect.dispose();
-    }
-
-    this.lights.dispose();
-    this.controls.dispose();
-    this.renderer.dispose();
-    if (this.composer) {
-      this.composer.dispose();
-    }
-
-    // Remove stats panel
-    if (this.stats) {
-      document.body.removeChild(this.stats.dom);
     }
   }
 }
