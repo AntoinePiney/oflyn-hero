@@ -91,8 +91,8 @@ export function setupCamera(camera) {
     mouse.y = THREE.MathUtils.lerp(mouse.y, mouse.targetY, 0.05);
 
     // Calculer les rotations basées sur la position de la souris
-    const rotationOffsetX = mouse.y * 0.3; // Réduit l'amplitude du mouvement
-    const rotationOffsetY = mouse.x * 0.3;
+    const rotationOffsetX = mouse.y * 0.5; // Réduit l'amplitude du mouvement
+    const rotationOffsetY = mouse.x * 0.5;
 
     // Appliquer les rotations à la position de base
     camera.position.x = 27 + rotationOffsetY * 2;

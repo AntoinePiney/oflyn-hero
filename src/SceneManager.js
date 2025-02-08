@@ -52,6 +52,13 @@ import { createVideoPlane } from "./components/objects/VideoPlane";
 import { createWall } from "./components/objects/Wall";
 import { createCables } from "./components/objects/Cables";
 import { createCableEffect } from "./components/effects/CableEffect";
+
+/**
+ * =========================================
+ * OPTINAL COMPONENTS
+ * =========================================
+ */
+
 import Konami from "./components/konami/Konami";
 
 /**
@@ -62,6 +69,10 @@ import Konami from "./components/konami/Konami";
  */
 export class SceneManager {
   constructor() {
+    // Ajouter un cache pour les ressources
+    this.resourceCache = new Map();
+    // Ajouter un système de gestion des ressources
+    this.disposables = new Set();
     // État de base
     this.state = {
       isLoading: false,
@@ -80,6 +91,13 @@ export class SceneManager {
     this.konami = new Konami();
 
     console.log("SceneManager: Construction complete");
+  }
+  // Ajouter une méthode de gestion des ressources
+  trackDisposable(resource) {
+    if (resource && typeof resource.dispose === "function") {
+      this.disposables.add(resource);
+    }
+    return resource;
   }
 
   async init() {
@@ -128,29 +146,35 @@ export class SceneManager {
 
   setupRenderer() {
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
+      antialias: this.isMobile() ? false : true,
       powerPreference: "high-performance",
-      alpha: true,
+      alpha: false, // Désactiver si non nécessaire
+      stencil: false, // Désactiver si non nécessaire
+      depth: true,
     });
 
-    // Configuration de base
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Ajouter la gestion des FPS
+    this.targetFPS = this.isMobile() ? 30 : 60;
+    this.frameTime = 1000 / this.targetFPS;
+    this.lastFrameTime = 0;
 
-    // Optimisations du renderer
+    this.updateRendererSettings();
+    document.body.appendChild(this.renderer.domElement);
+  }
+
+  updateRendererSettings() {
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputEncoding = THREE.sRGBEncoding;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.0;
 
-    // Optimisations pour mobile
     if (this.isMobile()) {
       this.renderer.setPixelRatio(1);
       this.renderer.shadowMap.type = THREE.BasicShadowMap;
     }
-
-    document.body.appendChild(this.renderer.domElement);
   }
 
   setupControls() {
@@ -203,18 +227,18 @@ export class SceneManager {
 
   async setupModelComponents(model) {
     try {
-      const components = await Promise.all([
+      const [banc, mirror, ground, wall, cables] = await Promise.all([
         createBanc(model),
         createMirror(model),
         createGround(model),
-        createVideoPlane(model),
         createWall(model),
         createCables(model),
       ]);
 
-      const [banc, mirror, ground, videoPlane, wall, cables] = components;
+      // Create video plane with camera and controls access
+      const videoPlane = createVideoPlane(model, this.camera, this.controls);
 
-      // Ajout des composants à la scène
+      // Add components to scene
       [banc, mirror, ground, videoPlane, wall].forEach((component) => {
         if (component) {
           this.scene.add(component);
@@ -222,7 +246,7 @@ export class SceneManager {
         }
       });
 
-      // Configuration spéciale pour les câbles
+      // Special setup for cables
       if (cables) {
         cables.renderOrder = 1;
         this.scene.add(cables);
@@ -404,16 +428,14 @@ export class SceneManager {
 
   // UI Methods
   updateLoadingUI(progress) {
-    // Implémentez votre UI de chargement ici
     console.log(`Loading: ${progress.toFixed(1)}%`);
   }
 
   hideLoadingUI() {
-    // Implémentez la suppression de l'UI de chargement
+    // Implementation de la suppression de l'UI de chargement
   }
 
   showErrorUI(error) {
-    // Implémentez l'affichage des erreurs
     console.error("Scene loading error:", error);
   }
 
@@ -461,4 +483,5 @@ export class SceneManager {
 
 // Export singleton instance
 const sceneManager = new SceneManager();
+export default sceneManager;
 export const cleanup = () => sceneManager.cleanup();
