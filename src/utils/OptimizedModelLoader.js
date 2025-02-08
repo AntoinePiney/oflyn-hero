@@ -42,10 +42,11 @@ class OptimizedModelLoader {
     // Loader principal GLTF
     this.gltfLoader = new GLTFLoader();
 
-    // Configuration DRACO
+    // Configuration DRACO avec CDN
     const dracoLoader = new DRACOLoader();
-    dracoLoader.setDecoderPath("/draco/");
-    dracoLoader.setDecoderConfig({ type: "js" });
+    dracoLoader.setDecoderPath(
+      "https://www.gstatic.com/draco/versioned/decoders/1.5.6/"
+    );
     dracoLoader.preload();
     this.gltfLoader.setDRACOLoader(dracoLoader);
 
