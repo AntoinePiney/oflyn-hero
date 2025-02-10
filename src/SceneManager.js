@@ -47,7 +47,7 @@ const PERFORMANCE_CONFIG = {
     anisotropy: 4,
     pulseCount: 5,
     glowStrength: 3.5,
-    glowSpread: 3.0,
+    glowSpread: 3.2,
   },
 };
 
